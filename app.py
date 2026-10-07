@@ -9,20 +9,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 체스판 스타일 CSS (격자 모양 고정) ---
+# --- 안전한 기본 버튼 CSS 스타일 ---
 st.markdown("""
 <style>
-    div[data-testid="column"] {
-        padding: 1px !important;
-    }
-    div[data-testid="column"] > div > div > div > button {
+    div.stButton > button {
         width: 100% !important;
-        height: 60px !important;
-        font-size: 24px !important;
+        height: 55px !important;
+        font-size: 22px !important;
         padding: 0px !important;
         margin: 0px !important;
         border-radius: 4px !important;
-        border: 1px solid #ccc !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -149,4 +145,35 @@ def make_move(from_sq, to_sq):
         elif target.piece_type == chess.QUEEN and st.session_state.shields[enemy_color]["queen"]:
             st.session_state.shields[enemy_color]["queen"] = False
             st.toast("🛡️ 상대 퀸의 실드가 공격을 흡수했습니다!")
-            board
+            board.turn = not current_turn
+            st.session_state.selected_square = None
+            return
+
+    # 3. 비숍 점프 이동 실행
+    if attacker and attacker.piece_type == chess.BISHOP and is_valid_bishop_jump(from_sq, to_sq):
+        board.remove_piece_at(from_sq)
+        board.set_piece_at(to_sq, attacker)
+        board.turn = not current_turn
+        st.session_state.selected_square = None
+        return
+
+    # 4. 일반 이동
+    move = chess.Move(from_sq, to_sq, promotion=chess.QUEEN)
+    if move in board.legal_moves:
+        knight_splash = False
+        if attacker and attacker.piece_type == chess.KNIGHT and target:
+            if target.piece_type in [chess.PAWN, chess.BISHOP]:
+                knight_splash = True
+
+        board.push(move)
+
+        if knight_splash:
+            t_f, t_r = chess.square_file(to_sq), chess.square_rank(to_sq)
+            dirs = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+            for df, dr in dirs:
+                nf, nr = t_f + df, t_r + dr
+                if 0 <= nf < 8 and 0 <= nr < 8:
+                    adj_sq = chess.square(nf, nr)
+                    adj_p = board.piece_at(adj_sq)
+                    if adj_p and adj_p.piece_type not in [chess.KING, chess.QUEEN, chess.ROOK]:
+                        board.remove_piece_
