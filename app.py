@@ -12,7 +12,6 @@ st.set_page_config(
 # --- 체스판 스타일 CSS (격자 모양 고정) ---
 st.markdown("""
 <style>
-    /* 체스판 버튼을 정사각형 격자 형태로 고정 */
     div[data-testid="column"] {
         padding: 1px !important;
     }
@@ -62,13 +61,13 @@ def is_valid_bishop_jump(from_sq, to_sq):
     while curr_f != t_f and curr_r != t_r:
         sq = chess.square(curr_f, curr_r)
         p = board.piece_at(sq)
-        if p and p.color != current_turn: # 상대 기물이 막고 있으면 불가
+        if p and p.color != current_turn:
             return False
         curr_f += step_f
         curr_r += step_r
         
     dest_p = board.piece_at(to_sq)
-    if dest_p and dest_p.color == current_turn: # 도착지에 아군이 있으면 불가
+    if dest_p and dest_p.color == current_turn:
         return False
     return True
 
@@ -150,27 +149,4 @@ def make_move(from_sq, to_sq):
         elif target.piece_type == chess.QUEEN and st.session_state.shields[enemy_color]["queen"]:
             st.session_state.shields[enemy_color]["queen"] = False
             st.toast("🛡️ 상대 퀸의 실드가 공격을 흡수했습니다!")
-            board.turn = not current_turn
-            st.session_state.selected_square = None
-            return
-
-    # 3. 비숍 점프 이동 실행
-    if attacker and attacker.piece_type == chess.BISHOP and is_valid_bishop_jump(from_sq, to_sq):
-        board.remove_piece_at(from_sq)
-        board.set_piece_at(to_sq, attacker)
-        board.turn = not current_turn
-        st.session_state.selected_square = None
-        return
-
-    # 4. 일반 이동 (프로모션 퀸 자동 처리)
-    move = chess.Move(from_sq, to_sq, promotion=chess.QUEEN)
-    if move in board.legal_moves:
-        # 나이트 스플래시 판정
-        knight_splash = False
-        if attacker and attacker.piece_type == chess.KNIGHT and target:
-            if target.piece_type in [chess.PAWN, chess.BISHOP]:
-                knight_splash = True
-
-        board.push(move)
-
-        if knight
+            board
