@@ -155,4 +155,181 @@ html_code = """
                     var sqEl = document.createElement('div');
                     
                     var isWhiteSq = (rank + file) % 2 !== 0;
-                    sqEl.className = 'square ' + (isWhiteSq ? 'white-sq' : '
+                    sqEl.className = 'square ' + (isWhiteSq ? 'white-sq' : 'black-sq');
+                    sqEl.dataset.square = squareName;
+
+                    if (selectedSquare === squareName) {
+                        sqEl.classList.add('selected');
+                    } else if (legalDestinations.includes(squareName)) {
+                        sqEl.classList.add('highlight');
+                    }
+
+                    var piece = game.get(squareName);
+                    if (piece) {
+                        var pieceSymbol = (piece.color === 'w') ? piece.type.toUpperCase() : piece.type;
+                        sqEl.innerText = PIECES[pieceSymbol] || '';
+                    }
+
+                    sqEl.onclick = (function(sq) {
+                        return function() { onSquareClick(sq); };
+                    })(squareName);
+
+                    boardEl.appendChild(sqEl);
+                }
+            }
+
+            updateUI();
+        }
+
+        function onSquareClick(sq) {
+            var turn = game.turn();
+            var piece = game.get(sq);
+
+            if (selectedSquare === null) {
+                if (piece && piece.color === turn) {
+                    selectedSquare = sq;
+                }
+            } else {
+                if (selectedSquare === sq) {
+                    selectedSquare = null;
+                } else {
+                    var move = game.move({
+                        from: selectedSquare,
+                        to: sq,
+                        promotion: 'q'
+                    });
+
+                    if (move !== null) {
+                        if (move.captured) {
+                            var enemyColor = (turn === 'w') ? 'b' : 'w';
+                            if (move.captured === 'k' && shields[enemyColor].king) {
+                                shields[enemyColor].king = false;
+                                game.undo();
+                                switchTurn();
+                            } else if (move.captured === 'q' && shields[enemyColor].queen) {
+                                shields[enemyColor].queen = false;
+                                game.undo();
+                                switchTurn();
+                            }
+                        }
+                        selectedSquare = null;
+                    } else {
+                        if (piece && piece.color === turn) {
+                            selectedSquare = sq;
+                        } else {
+                            selectedSquare = null;
+                        }
+                    }
+                }
+            }
+            renderBoard();
+        }
+
+        function switchTurn() {
+            var tokens = game.fen().split(' ');
+            tokens[1] = (tokens[1] === 'w') ? 'b' : 'w';
+            game.load(tokens.join(' '));
+        }
+
+        function usePawnSkill() {
+            if (!selectedSquare) return;
+            var turn = game.turn();
+
+            // 남은 스킬 횟수가 없으면 차단
+            if (pawnSkillCount[turn] <= 0) return;
+
+            var piece = game.get(selectedSquare);
+            if (!piece || piece.type !== 'p') return;
+
+            var boardState = game.board();
+            var allies = [];
+
+            for (var r = 0; r < 8; r++) {
+                for (var f = 0; f < 8; f++) {
+                    var p = boardState[r][f];
+                    var sqName = String.fromCharCode(97 + f) + (8 - r);
+                    if (p && p.color === turn && sqName !== selectedSquare) {
+                        allies.push(sqName);
+                    }
+                }
+            }
+
+            if (allies.length > 0) {
+                var targetSq = allies[Math.floor(Math.random() * allies.length)];
+                var targetPiece = game.get(targetSq);
+
+                // 위치 교환
+                game.put({ type: targetPiece.type, color: targetPiece.color }, selectedSquare);
+                game.put({ type: piece.type, color: piece.color }, targetSq);
+
+                // 스킬 차감 및 턴 전환
+                pawnSkillCount[turn]--;
+                switchTurn();
+                selectedSquare = null;
+                renderBoard();
+            }
+        }
+
+        function updateUI() {
+            var turn = game.turn();
+            var turnText = (turn === 'w') ? '⚪ 백(White) 차례입니다.' : '⚫ 흑(Black) 차례입니다.';
+            if (game.in_checkmate()) turnText = '게임 종료! 외통수(Checkmate)';
+            document.getElementById('status').innerText = turnText;
+
+            // 스킬 횟수 UI
+            document.getElementById('w-skill-count').innerText = pawnSkillCount['w'] + ' / 1';
+            document.getElementById('b-skill-count').innerText = pawnSkillCount['b'] + ' / 1';
+
+            // 실드 표기
+            document.getElementById('w-shield').innerText = (shields['w'].king ? '✅' : '❌') + ' / ' + (shields['w'].queen ? '✅' : '❌');
+            document.getElementById('b-shield').innerText = (shields['b'].king ? '✅' : '❌') + ' / ' + (shields['b'].queen ? '✅' : '❌');
+
+            // 스킬 버튼 UI
+            var pawnBtn = document.getElementById('pawn-skill-btn');
+            var skillInfo = document.getElementById('skill-info');
+
+            if (selectedSquare) {
+                var piece = game.get(selectedSquare);
+                if (piece && piece.type === 'p' && piece.color === turn) {
+                    if (pawnSkillCount[turn] > 0) {
+                        skillInfo.innerText = '선택한 폰(' + selectedSquare.toUpperCase() + ')의 특수 스킬:';
+                        pawnBtn.style.display = 'block';
+                        pawnBtn.disabled = false;
+                        pawnBtn.innerText = '🌀 폰: 위치 랜덤 교환 (턴 넘어감)';
+                    } else {
+                        skillInfo.innerText = '이미 스킬을 1회 사용했습니다.';
+                        pawnBtn.style.display = 'block';
+                        pawnBtn.disabled = true;
+                        pawnBtn.innerText = '❌ 스킬 사용 완료 (0/1)';
+                    }
+                } else {
+                    skillInfo.innerText = '선택한 기물: ' + selectedSquare.toUpperCase();
+                    pawnBtn.style.display = 'none';
+                }
+            } else {
+                skillInfo.innerText = '체스판에서 내 기물을 클릭하세요.';
+                pawnBtn.style.display = 'none';
+            }
+        }
+
+        function initGame() {
+            game.reset();
+            selectedSquare = null;
+            shields = {
+                'w': { king: true, queen: true },
+                'b': { king: true, queen: true }
+            };
+            pawnSkillCount = {
+                'w': 1,
+                'b': 1
+            };
+            renderBoard();
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
+"""
+
+components.html(html_code, height=650)
