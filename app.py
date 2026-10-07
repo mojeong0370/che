@@ -1,30 +1,17 @@
 import streamlit as st
 import chess
+import chess.svg
 import random
 
-# 페이지 기본 설정
+# 페이지 설정
 st.set_page_config(
     page_title="특수 능력 체스 게임",
     page_icon="♟️",
     layout="wide"
 )
 
-# --- 안전한 기본 버튼 CSS 스타일 ---
-st.markdown("""
-<style>
-    div.stButton > button {
-        width: 100% !important;
-        height: 55px !important;
-        font-size: 22px !important;
-        padding: 0px !important;
-        margin: 0px !important;
-        border-radius: 4px !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- 세션 상태 초기화 ---
-def init_game():
+# 세션 상태 초기화
+if "board" not in st.session_state:
     st.session_state.board = chess.Board()
     st.session_state.selected_square = None
     st.session_state.shields = {
@@ -36,104 +23,40 @@ def init_game():
         chess.BLACK: {"target_sq": random.choice([chess.A8, chess.H8]), "used": False}
     }
 
-if "board" not in st.session_state:
-    init_game()
-
 board = st.session_state.board
 current_turn = board.turn
 
-# --- 비숍 점프 계산 ---
-def is_valid_bishop_jump(from_sq, to_sq):
-    f_f, f_r = chess.square_file(from_sq), chess.square_rank(from_sq)
-    t_f, t_r = chess.square_file(to_sq), chess.square_rank(to_sq)
-    
-    if abs(f_f - t_f) != abs(f_r - t_r) or from_sq == to_sq:
-        return False
-        
-    step_f = 1 if t_f > f_f else -1
-    step_r = 1 if t_r > f_r else -1
-    
-    curr_f, curr_r = f_f + step_f, f_r + step_r
-    while curr_f != t_f and curr_r != t_r:
-        sq = chess.square(curr_f, curr_r)
-        p = board.piece_at(sq)
-        if p and p.color != current_turn:
-            return False
-        curr_f += step_f
-        curr_r += step_r
-        
-    dest_p = board.piece_at(to_sq)
-    if dest_p and dest_p.color == current_turn:
-        return False
-    return True
+def reset_game():
+    st.session_state.board = chess.Board()
+    st.session_state.selected_square = None
+    st.session_state.shields = {
+        chess.WHITE: {"king": True, "queen": True},
+        chess.BLACK: {"king": True, "queen": True}
+    }
+    st.session_state.rook_ability = {
+        chess.WHITE: {"target_sq": random.choice([chess.A1, chess.H1]), "used": False},
+        chess.BLACK: {"target_sq": random.choice([chess.A8, chess.H8]), "used": False}
+    }
 
-# --- 룩 관통 이동 계산 ---
-def is_rook_laser_move(from_sq, to_sq):
-    f_file, f_rank = chess.square_file(from_sq), chess.square_rank(from_sq)
-    t_file, t_rank = chess.square_file(to_sq), chess.square_rank(to_sq)
-    return (f_file == t_file and f_rank != t_rank) or (f_rank == t_rank and f_file != t_file)
-
-# --- 이동 가능한 칸 계산 ---
-def get_legal_moves(sq):
+# --- 로직 함수들 ---
+def get_legal_destinations(sq):
     legal_destinations = set()
     if sq is None:
         return legal_destinations
-        
     p = board.piece_at(sq)
     if not p or p.color != current_turn:
         return legal_destinations
 
-    # 1. 일반 규칙 이동
     for move in board.legal_moves:
         if move.from_square == sq:
             legal_destinations.add(move.to_square)
-
-    # 2. 비숍 특수 능력 (아군 점프)
-    if p.piece_type == chess.BISHOP:
-        for dest in chess.SQUARES:
-            if is_valid_bishop_jump(sq, dest):
-                legal_destinations.add(dest)
-
-    # 3. 룩 관통 레이저
-    rook_info = st.session_state.rook_ability[current_turn]
-    if p.piece_type == chess.ROOK and sq == rook_info["target_sq"] and not rook_info["used"]:
-        for dest in chess.SQUARES:
-            if is_rook_laser_move(sq, dest) and dest != sq:
-                legal_destinations.add(dest)
-
     return legal_destinations
 
-# --- 기물 이동 처리 ---
 def make_move(from_sq, to_sq):
     attacker = board.piece_at(from_sq)
     target = board.piece_at(to_sq)
-    
-    # 1. 룩 관통 레이저 실행
-    rook_info = st.session_state.rook_ability[current_turn]
-    if attacker and attacker.piece_type == chess.ROOK and from_sq == rook_info["target_sq"] and not rook_info["used"]:
-        if is_rook_laser_move(from_sq, to_sq):
-            f_f, f_r = chess.square_file(from_sq), chess.square_rank(from_sq)
-            t_f, t_r = chess.square_file(to_sq), chess.square_rank(to_sq)
-            step_f = 0 if f_f == t_f else (1 if t_f > f_f else -1)
-            step_r = 0 if f_r == t_r else (1 if t_r > f_r else -1)
-            
-            curr_f, curr_r = f_f + step_f, f_r + step_r
-            while True:
-                sq = chess.square(curr_f, curr_r)
-                board.remove_piece_at(sq)
-                if curr_f == t_f and curr_r == t_r:
-                    break
-                curr_f += step_f
-                curr_r += step_r
-                
-            board.remove_piece_at(from_sq)
-            board.set_piece_at(to_sq, attacker)
-            st.session_state.rook_ability[current_turn]["used"] = True
-            board.turn = not current_turn
-            st.session_state.selected_square = None
-            return
 
-    # 2. 실드 검사
+    # 실드 처리
     if target and target.color != current_turn:
         enemy_color = target.color
         if target.piece_type == chess.KING and st.session_state.shields[enemy_color]["king"]:
@@ -149,31 +72,20 @@ def make_move(from_sq, to_sq):
             st.session_state.selected_square = None
             return
 
-    # 3. 비숍 점프 이동 실행
-    if attacker and attacker.piece_type == chess.BISHOP and is_valid_bishop_jump(from_sq, to_sq):
-        board.remove_piece_at(from_sq)
-        board.set_piece_at(to_sq, attacker)
-        board.turn = not current_turn
-        st.session_state.selected_square = None
-        return
-
-    # 4. 일반 이동
     move = chess.Move(from_sq, to_sq, promotion=chess.QUEEN)
     if move in board.legal_moves:
-        knight_splash = False
-        if attacker and attacker.piece_type == chess.KNIGHT and target:
-            if target.piece_type in [chess.PAWN, chess.BISHOP]:
-                knight_splash = True
-
         board.push(move)
+        st.session_state.selected_square = None
 
-        if knight_splash:
-            t_f, t_r = chess.square_file(to_sq), chess.square_rank(to_sq)
-            dirs = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-            for df, dr in dirs:
-                nf, nr = t_f + df, t_r + dr
-                if 0 <= nf < 8 and 0 <= nr < 8:
-                    adj_sq = chess.square(nf, nr)
-                    adj_p = board.piece_at(adj_sq)
-                    if adj_p and adj_p.piece_type not in [chess.KING, chess.QUEEN, chess.ROOK]:
-                        board.remove_piece_
+# --- 메인 화면 ---
+st.title("♟️ 특수 능력 체스 게임")
+
+turn_text = "⚪ 백(White) 차례" if current_turn == chess.WHITE else "⚫ 흑(Black) 차례"
+st.subheader(f"현재 순서: {turn_text}")
+
+col_left, col_right = st.columns([1.5, 1])
+
+with col_left:
+    # 체스판 SVG 시각화
+    selected = st.session_state.selected_square
+    legal_moves = get_legal_destinations(selected)
