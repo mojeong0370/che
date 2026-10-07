@@ -1,7 +1,5 @@
 import streamlit as st
 import chess
-import chess.svg
-import streamlit.components.v1 as components
 import random
 
 # 페이지 설정
@@ -11,35 +9,47 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- 체스판 격자 CSS (버튼 클릭 이동용) ---
+st.markdown("""
+<style>
+    .chess-grid {
+        display: grid;
+        grid-template-columns: repeat(8, 55px);
+        grid-template-rows: repeat(8, 55px);
+        gap: 0px;
+        width: 440px;
+        margin: 0 auto;
+        border: 3px solid #333;
+    }
+    div.stButton > button {
+        width: 55px !important;
+        height: 55px !important;
+        font-size: 26px !important;
+        padding: 0px !important;
+        margin: 0px !important;
+        border-radius: 0px !important;
+        border: 1px solid rgba(0,0,0,0.1) !important;
+        line-height: 55px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # 세션 상태 초기화
-if "board" not in st.session_state:
+def init_game():
     st.session_state.board = chess.Board()
     st.session_state.selected_square = None
     st.session_state.shields = {
         chess.WHITE: {"king": True, "queen": True},
         chess.BLACK: {"king": True, "queen": True}
     }
-    st.session_state.rook_ability = {
-        chess.WHITE: {"target_sq": random.choice([chess.A1, chess.H1]), "used": False},
-        chess.BLACK: {"target_sq": random.choice([chess.A8, chess.H8]), "used": False}
-    }
+
+if "board" not in st.session_state:
+    init_game()
 
 board = st.session_state.board
 current_turn = board.turn
 
-def reset_game():
-    st.session_state.board = chess.Board()
-    st.session_state.selected_square = None
-    st.session_state.shields = {
-        chess.WHITE: {"king": True, "queen": True},
-        chess.BLACK: {"king": True, "queen": True}
-    }
-    st.session_state.rook_ability = {
-        chess.WHITE: {"target_sq": random.choice([chess.A1, chess.H1]), "used": False},
-        chess.BLACK: {"target_sq": random.choice([chess.A8, chess.H8]), "used": False}
-    }
-
-# --- 로직 함수들 ---
+# 이동 가능 위치 계산
 def get_legal_destinations(sq):
     legal_destinations = set()
     if sq is None:
@@ -53,10 +63,11 @@ def get_legal_destinations(sq):
             legal_destinations.add(move.to_square)
     return legal_destinations
 
+# 실제 기물 이동 함수
 def make_move(from_sq, to_sq):
     target = board.piece_at(to_sq)
 
-    # 실드 처리
+    # 실드 검사
     if target and target.color != current_turn:
         enemy_color = target.color
         if target.piece_type == chess.KING and st.session_state.shields[enemy_color]["king"]:
@@ -72,86 +83,101 @@ def make_move(from_sq, to_sq):
             st.session_state.selected_square = None
             return
 
-    move = chess.Move(from_sq, to_sq, promotion=chess.QUEEN)
+    # 일반 이동 및 프로모션
+    move = chess.Move(int(from_sq), int(to_sq), promotion=chess.QUEEN)
     if move in board.legal_moves:
         board.push(move)
         st.session_state.selected_square = None
+    else:
+        # 혹시 모를 승진 등의 다른 기물 대응
+        for legal in board.legal_moves:
+            if legal.from_square == from_sq and legal.to_square == to_sq:
+                board.push(legal)
+                st.session_state.selected_square = None
+                break
 
-# --- UI 레이아웃 ---
+# 칸 클릭 처리
+def handle_click(sq):
+    selected = st.session_state.selected_square
+    if selected is None:
+        p = board.piece_at(sq)
+        if p and p.color == current_turn:
+            st.session_state.selected_square = sq
+    else:
+        if selected == sq:
+            st.session_state.selected_square = None
+        else:
+            legal_moves = get_legal_destinations(selected)
+            if sq in legal_moves:
+                make_move(selected, sq)
+            else:
+                p = board.piece_at(sq)
+                if p and p.color == current_turn:
+                    st.session_state.selected_square = sq
+                else:
+                    st.session_state.selected_square = None
+
+# UI 구성
 st.title("♟️ 특수 능력 체스 게임")
 
 turn_text = "⚪ 백(White) 차례" if current_turn == chess.WHITE else "⚫ 흑(Black) 차례"
 st.subheader(f"현재 순서: {turn_text}")
 
-col_left, col_right = st.columns([1.2, 1])
+col_board, col_info = st.columns([1.2, 1])
 
-with col_left:
+with col_board:
     selected = st.session_state.selected_square
     legal_moves = get_legal_destinations(selected)
-    
-    # SVG 생성 및 HTML 컴포넌트로 렌더링 (에러 원인 해결)
-    svg_data = chess.svg.board(
-        board,
-        fill=dict.fromkeys(legal_moves, "#76ff0388"),
-        size=400
-    )
-    
-    # HTML 컴포넌트를 사용해 안정적으로 출력
-    components.html(
-        f'<div style="display:flex;justify-content:center;">{svg_data}</div>',
-        height=420
-    )
 
-    # 내 기물 선택 목록
-    my_pieces = [sq for sq in chess.SQUARES if board.piece_at(sq) and board.piece_at(sq).color == current_turn]
-    
-    piece_options = {"선택 안 함": None}
-    for sq in my_pieces:
-        p = board.piece_at(sq)
-        name = f"{p.unicode_symbol()} ({chess.square_name(sq).upper()})"
-        piece_options[name] = sq
-
-    selected_piece_name = st.selectbox("1️⃣ 이동할 내 기물 선택:", list(piece_options.keys()))
-    chosen_sq = piece_options[selected_piece_name]
-
-    if chosen_sq is not None:
-        st.session_state.selected_square = chosen_sq
-        destinations = get_legal_destinations(chosen_sq)
-        
-        if destinations:
-            dest_options = {f"{chess.square_name(d).upper()}" + (" (상대 기물)" if board.piece_at(d) else ""): d for d in destinations}
-            target_dest_name = st.selectbox("2️⃣ 이동할 목적지 선택:", list(dest_options.keys()))
+    # 8x8 체스판 그리드 생성
+    for rank in range(7, -1, -1):
+        cols = st.columns(8)
+        for file in range(8):
+            sq = chess.square(file, rank)
+            p = board.piece_at(sq)
             
-            if st.button("🚀 기물 이동 실행", use_container_width=True):
-                make_move(chosen_sq, dest_options[target_dest_name])
-                st.rerun()
-        else:
-            st.warning("이 기물은 이동할 수 있는 칸이 없습니다.")
+            p_str = p.unicode_symbol() if p else ""
+            
+            # 체스판 배경 색상 지정
+            if sq == selected:
+                bg = "🟡"
+            elif sq in legal_moves:
+                bg = "🟢"
+            else:
+                bg = ""
 
-with col_right:
-    st.markdown("### 🔮 스킬 & 게임 상태")
+            btn_label = f"{bg}{p_str}" if bg else (p_str if p_str else " ")
+
+            if cols[file].button(btn_label, key=f"sq_{sq}"):
+                handle_click(sq)
+                st.rerun()
+
+with col_info:
+    st.markdown("### 🔮 액티브 스킬 & 선택 정보")
     
-    if chosen_sq is not None:
-        p = board.piece_at(chosen_sq)
-        if p and p.piece_type == chess.PAWN:
-            if st.button("🌀 폰 스킬: 위치 교환", use_container_width=True):
-                targets = [s for s in chess.SQUARES if board.piece_at(s) and board.piece_at(s).color == current_turn and s != chosen_sq]
-                if targets:
-                    target_sq = random.choice(targets)
-                    p1, p2 = board.piece_at(chosen_sq), board.piece_at(target_sq)
-                    board.set_piece_at(chosen_sq, p2)
-                    board.set_piece_at(target_sq, p1)
-                    board.turn = not current_turn
-                    st.session_state.selected_square = None
-                    st.toast("🌀 위치가 교환되었습니다!")
-                    st.rerun()
+    selected = st.session_state.selected_square
+    if selected is not None:
+        p = board.piece_at(selected)
+        if p:
+            sq_name = chess.square_name(selected).upper()
+            st.info(f"선택한 기물: **{p.unicode_symbol()} ({sq_name})**")
+            
+            if p.piece_type == chess.PAWN and p.color == current_turn:
+                if st.button("🌀 폰 스킬: 아군 위치 교환", use_container_width=True):
+                    targets = [s for s in chess.SQUARES if board.piece_at(s) and board.piece_at(s).color == current_turn and s != selected]
+                    if targets:
+                        target_sq = random.choice(targets)
+                        p1 = board.piece_at(selected)
+                        p2 = board.piece_at(target_sq)
+                        board.set_piece_at(selected, p2)
+                        board.set_piece_at(target_sq, p1)
+                        board.turn = not current_turn
+                        st.session_state.selected_square = None
+                        st.toast("🌀 위치가 교환되었습니다!")
+                        st.rerun()
+    else:
+        st.write("체스판에서 이동하고 싶은 **내 기물**을 마우스로 클릭해 주세요.")
 
     st.markdown("---")
     st.write("🛡️ **실드 현황**")
-    st.write(f"- 백 킹/퀸: {'✅' if st.session_state.shields[chess.WHITE]['king'] else '❌'} / {'✅' if st.session_state.shields[chess.WHITE]['queen'] else '❌'}")
-    st.write(f"- 흑 킹/퀸: {'✅' if st.session_state.shields[chess.BLACK]['king'] else '❌'} / {'✅' if st.session_state.shields[chess.BLACK]['queen'] else '❌'}")
-
-    st.markdown("---")
-    if st.button("🔄 게임 초기화", use_container_width=True):
-        reset_game()
-        st.rerun()
+    st.write(f"- 백 킹/퀸: {'✅' if st
