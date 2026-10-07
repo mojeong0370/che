@@ -4,17 +4,31 @@ import random
 
 st.set_page_config(page_title="특수 능력 체스 게임", page_icon="♟️", layout="wide")
 
-# CSS: 체스판 격자 및 기물 스타일
+# CSS: 8x8 체스판 격자 고정 및 버튼 디자인
 st.markdown("""
 <style>
+    /* 체스판 그리드 컨테이너 */
+    .chess-grid {
+        display: grid;
+        grid-template-columns: repeat(8, 55px);
+        grid-template-rows: repeat(8, 55px);
+        gap: 0px;
+        width: 440px;
+        height: 440px;
+        border: 4px solid #444;
+        margin-bottom: 20px;
+    }
+    
+    /* 버튼 스타일 Overwrite */
     div.stButton > button {
         width: 100% !important;
-        height: 55px !important;
-        font-size: 28px !important;
+        height: 52px !important;
+        font-size: 26px !important;
         padding: 0px !important;
         margin: 0px !important;
         border-radius: 0px !important;
-        line-height: 55px !important;
+        border: 1px solid #ccc !important;
+        line-height: 52px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -43,22 +57,17 @@ def reset_game():
 def handle_square_click(sq):
     selected = st.session_state.selected_sq
     
-    # 1. 기물이 선택되지 않은 상태
     if selected is None:
         p = board.piece_at(sq)
         if p and p.color == current_turn:
             st.session_state.selected_sq = sq
-    # 2. 이미 기물이 선택된 상태
     else:
         if selected == sq:
-            st.session_state.selected_sq = None  # 같은 칸 클릭 시 취소
+            st.session_state.selected_sq = None
         else:
-            # 이동 규칙 확인
             move = chess.Move(selected, sq, promotion=chess.QUEEN)
-            
             if move in board.legal_moves:
                 target = board.piece_at(sq)
-                # 실드 체크
                 if target and target.color != current_turn:
                     enemy = target.color
                     if target.piece_type == chess.KING and st.session_state.shields[enemy]["king"]:
@@ -92,7 +101,12 @@ def pawn_swap_skill(sq):
         board.turn = not current_turn
         st.session_state.selected_sq = None
 
-# UI 구성
+# 체스 기물 표시용 딕셔너리
+UNICODE_PIECES = {
+    'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+    'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+}
+
 st.title("♟️ 특수 능력 체스 게임")
 
 turn_label = "⚪ 백(White) 차례" if current_turn == chess.WHITE else "⚫ 흑(Black) 차례"
@@ -100,32 +114,24 @@ st.subheader(turn_label)
 
 col1, col2 = st.columns([1.2, 1])
 
-# 체스 기물 표기용 딕셔너리
-UNICODE_PIECES = {
-    'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
-    'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
-}
-
 with col1:
     selected = st.session_state.selected_sq
     
-    # 이동 가능한 칸 목록 계산
     legal_dests = set()
     if selected is not None:
         for m in board.legal_moves:
             if m.from_square == selected:
                 legal_dests.add(m.to_square)
 
-    # 8x8 체스판 출력
+    # 8개 열 컨테이너 생성 후 정렬
+    board_cols = st.columns(8)
+    
     for rank in range(7, -1, -1):
-        cols = st.columns(8)
         for file in range(8):
             sq = chess.square(file, rank)
             p = board.piece_at(sq)
-            
             symbol = UNICODE_PIECES[p.symbol()] if p else ""
             
-            # 칸 색상 강조
             if sq == selected:
                 btn_label = f"🟡{symbol}" if symbol else "🟡"
             elif sq in legal_dests:
@@ -133,7 +139,8 @@ with col1:
             else:
                 btn_label = symbol if symbol else " "
 
-            cols[file].button(
+            # 각 열(Column)에 순서대로 버튼 배치
+            board_cols[file].button(
                 btn_label, 
                 key=f"sq_{sq}", 
                 on_click=handle_square_click, 
